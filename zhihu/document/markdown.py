@@ -1,41 +1,10 @@
 import re
 
 from zhihu.document.html import Parsing
+from io import StringIO
 
 
 class Markdown:
-    def __init__(self, content, meta):
-        self.meta = meta
-        self.content = content
-        self.image_list = list()
-
-    def write_down(self, outfile):
-        background = ''
-        if self.meta.background is not None and self.meta.background != '':
-            background = '![背景大图](%s)\n\n' % self.meta.background
-
-        title = '# [%s](%s)\n\n' % (self.meta.title, self.meta.original_url)
-
-        split_line = '-' * len(title) + '\n\n'
-
-        if self.meta.author_avatar_url is not None or self.meta.author_avatar_url != '':
-            head_img = '![%s](%s "%s")&emsp;' % (
-                self.meta.author, self.meta.author_avatar_url, self.meta.author)
-        else:
-            head_img = ''
-
-        if self.meta.created_date is not None or self.meta.created_date != '':
-            author = '**[%s](%s) / %s**\n\n' % (
-                self.meta.author, self.meta.author_homepage, self.meta.created_date)
-        else:
-            author = '**[%s](%s)\n\n' % (self.meta.author, self.meta.author_homepage)
-
-        outfile.write(background + title + split_line + head_img + author)
-
-        outfile.write(Formatter(self.content).formatter(self))
-
-
-class Formatter:
     functions = {
         'div': 'code',
         'figure': 'figure',
@@ -61,52 +30,91 @@ class Formatter:
     emphasize = ('em', 'strong', 'b', 'i')
     split = ('p' 'br', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6')
 
-    def __init__(self, content):
+    def __init__(self, content, meta, remove_media):
         self.tags = Parsing().parse_tag(content)
-        self.image_list = list()
         self.reference_list = list()
+        self.remove_media = remove_media
+        self.meta = meta
+        self.content = content
 
-    def formatter(self, opt):
-        formatter = self.format(self.tags, self.reference_list, self.image_list)
-        opt.image_list = self.image_list
-        content = list()
-        for ref in self.reference_list:
-            content.append('[%s] [%s](%s)\n\n' % (ref.get('index'), ref.get('text'), ref.get('url')))
-        return formatter + ''.join(content)
+    def write_down(self, outfile):
+
+        if bool(self.meta.background):
+            background = '![背景大图](%s)\n\n' % self.meta.background
+            outfile.write(background)
+
+        title = '# [%s](%s)\n\n' % (self.meta.title, self.meta.source_url)
+        outfile.write(title)
+
+        split_line = '-' * len(title) + '\n\n'
+        outfile.write(split_line)
+
+        if bool(self.meta.author_avatar_url):
+            head_img = '![%s](%s "%s")&emsp;' % (
+                self.meta.author, self.meta.author_avatar_url, self.meta.author)
+            outfile.write(head_img)
+
+        if bool(self.meta.created_date):
+            author = '**[%s](%s) / %s**\n\n' % (
+                self.meta.author, self.meta.author_homepage, self.meta.created_date)
+        else:
+            author = '**[%s](%s)\n\n' % (self.meta.author, self.meta.author_homepage)
+
+        outfile.write(author)
+
+        formatter = self.format(
+            self.tags,
+            self.reference_list,
+            remove_media=self.remove_media
+        )
+
+        outfile.write(formatter)
+
+        if len(self.reference_list) != 0:
+            for ref in self.reference_list:
+                reference = '[%s] [%s](%s)\n\n' % (ref.get('index'), ref.get('text'), ref.get('url'))
+                outfile.write(reference)
 
     @classmethod
-    def format(cls, tags, reference_list, image_list, level=1):
-        content = list()
+    def format(cls, tags, reference_list, remove_media=False, level=1):
+        content = StringIO()
         for tag in tags:
-            warp = cls.format_tag(
-                tag=tag, reference_list=reference_list, image_list=image_list, level=level)
-            inner = None
-            if tag.name not in cls.warp:
-                inner = cls.format(tag.contents, reference_list, image_list, level+1)
-            content.append(cls._warp_inner(warp, inner))
+            if tag.name == 'figure' and remove_media:
+                continue
 
-        return ''.join(content)
+            warp = cls.format_tag(
+                tag=tag,
+                reference_list=reference_list,
+                level=level
+            )
+
+            if tag.name not in cls.warp:
+                inner = cls.format(tag.contents, reference_list, level + 1)
+                warp = warp.format(inner=inner)
+            content.write(warp)
+
+        string_content = content.getvalue()
+        content.close()
+        return string_content
 
     @classmethod
     def format_tag(cls, **kwargs):
-        handle = cls.find_handle_func_by_name(kwargs.get('tag').name)
-        return handle(**kwargs)
 
-    @classmethod
-    def _warp_inner(cls, warp, inner):
-        if inner is None:
-            return warp
-        return warp.format(inner=inner)
+        tag_name = kwargs.get('tag').name
 
-    @classmethod
-    def find_handle_func_by_name(cls, name):
-        if name is None:
-            return cls.string
+        if tag_name is None:
+            return cls.string(**kwargs)
 
-        if re.match('h\d', name):
-            name = 'hx'
+        if re.match(r'h\d', tag_name):
+            tag_name = 'hx'
 
-        return getattr(cls, cls.functions.get(name, 'unsupported'))
+        handle_function = getattr(cls, cls.functions.get(tag_name, 'unsupported'))
+
+        return handle_function(**kwargs)
+
+    ###########################################
+    # -----------{handle_functions}---------- #
+    ###########################################
 
     @classmethod
     def string(cls, **kwargs):
@@ -181,8 +189,6 @@ class Formatter:
         img = kwargs.get('tag').find('img')
         url = img.get_attrs('data-original') or img.get_attrs('src')
 
-        kwargs.get('image_list').append(url)
-
         try:
             title = kwargs.get('tag').find('figcaption').string
         except AttributeError:
@@ -225,12 +231,14 @@ class Formatter:
         content.append(quote_span)
         for tag in quote_tag.contents:
             warp = cls.format_tag(tag=tag, **kwargs)
-            inner = None
+
             if tag.name not in cls.warp:
                 inner = cls.format(tag.contents, **kwargs)
-            content.append(cls._warp_inner(warp, inner))
+                content.append(warp.format(inner=inner))
+
             if tag.name in cls.split:
                 content.append(quote_span)
+
         if content[-1] == quote_span:
             content.pop()
         return ''.join(content) + '\n\n'
@@ -276,7 +284,3 @@ class Formatter:
             return '{inner}'
         else:
             return '{inner}\n\n'
-
-
-if __name__ == '__main__':
-    pass

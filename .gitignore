@@ -1,12 +1,11 @@
-## file
-NewConcourse.py
-
-
-## dir
 build/
 data/
-development/
+data/development/
 dist/
 __pycache__/
 .idea/
-Zhihu_Spider.egg-info/
+*.egg-info/
+*.jpg
+*.png
+
+GrandConcourse.py

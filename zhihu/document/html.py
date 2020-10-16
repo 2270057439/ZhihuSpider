@@ -3,8 +3,8 @@ import re
 from pygments import highlight
 from pygments.formatters.html import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
-
-from zhihu.conf import config
+from zhihu.auxiliary import data
+from zhihu.exception import ZhihuHtmlParseError
 
 __all__ = ['Tag', 'Parsing', 'TagGenerate', 'Mushroom', 'Formatter']
 
@@ -41,11 +41,6 @@ def except_handle_string(func):
             pass
 
     return handle_string
-
-
-class TagParseError(ValueError):
-    def __init__(self):
-        super(TagParseError, self).__init__('can not parse the tag, maybe self-close tag was met.')
 
 
 class Tag:
@@ -302,18 +297,23 @@ class Parsing:
     def arouse_error(self, max_loop):
         """检查解析过程是否正常，不正常将引发ValueError"""
         if max_loop == 0:
-            w = 'While loop go beyond the max_loop(%d). ' \
-                'The following words is showed below line.' % len(self._tag)
-            raise ValueError('%s\n%s\n\n%s' % (w, '-' * (len(w) + 12), self._tag[self._ofs:]))
+            w = '超过最大解析次数（%s），未解析的标签如下：' % len(self._tag)
+            raise ZhihuHtmlParseError(
+                '%s\n%s\n\n%s' % (w, '-' * (2 * len(w) + 12), self._tag[self._ofs:]), self._tag)
+
         if len(self._stack) != 0:
-            raise TagParseError()
+            raise ZhihuHtmlParseError('无法解析，可能遇到了自闭合标签', self._tag)
 
     def replace(self, stg):
         """处理html模板中的字符串并替换标识符的值"""
         mark = re.search(self.mark, stg)
         while mark:
             value = self._marks_value.get(mark.group(1), '##')
-            stg = re.sub(self.mark, value, stg, 1)
+            try:
+                stg = re.sub(self.mark, value, stg, 1)
+            except TypeError:
+                print(type(self.mark), type(value), type(stg), self.mark, value, stg)
+                raise TypeError
             mark = re.search(self.mark, stg)
         return stg
 
@@ -452,10 +452,7 @@ class TagGenerate(Parsing):
 
     @classmethod
     def template(cls, name):
-        try:
-            return config.get_setting('tag/%s' % name)
-        except KeyError:
-            raise KeyError('not find template named %s.' % name)
+        return data.template(name)
 
     def generate_tag_by_template(self, template, marks_value=None):
         return self.parse_tmp(template, marks_value)[0]
@@ -471,7 +468,7 @@ class TagGenerate(Parsing):
             'link-card-url': url,
             'link-card-title': title
         }
-        name = 'lc_img' if img is not None else 'lc_svg'
+        name = 'linkCardImage' if img is not None else 'linkCardDefault'
         return self.generate_tag_by_template(self.template(name), marks_value=mas_val)
 
     @classmethod
@@ -480,7 +477,7 @@ class TagGenerate(Parsing):
 
     def article_tile(self, meta):
 
-        mas_val = {'article-origin': meta.original_url,
+        mas_val = {'article-origin': meta.source_url,
                    'user-avatar': meta.author_avatar_url,
                    'user-name': meta.author,
                    'user-link': meta.author_homepage,
@@ -488,26 +485,26 @@ class TagGenerate(Parsing):
                    'title': meta.title,
                    'background-image': meta.background
                    }
-        header = ['header', 'header_simple'][meta.pattern]
-        title = self.generate_tag_by_template(self.template(header), marks_value=mas_val)
+        title = self.generate_tag_by_template(self.template('head'), marks_value=mas_val)
         if not (meta.background is None or meta.background == ''):
             title.contents.insert(
                 0,
                 self.generate_tag_by_template(
-                    self.template('bgg'), marks_value=mas_val)
+                    self.template('background'), marks_value=mas_val)
             )
         return title
 
     def video_box(self, video_link, cover_link, tip=None):
         # TODO 针对有无视频标题做两套video box
+        t = '点击封面可观看视频!'
         mas_val = {'video-link': video_link,
                    'video-cover': cover_link,
-                   'video-tip': '点击封面可观看视频!' if tip is None else '%s，%s' % (tip, '点击封面可观看视频!')
+                   'video-tip': tip + '，' + t if tip else t
                    }
         return self.generate_tag_by_template(self.template('video'), marks_value=mas_val)
 
     def reference_index(self, index):
-        return self.generate_tag_by_template(self.template('ref_ind'), {'index': index})
+        return self.generate_tag_by_template(self.template('referenceIndex'), {'index': index})
 
     def reference_table(self, ref_title_url):
         table = Tag('table', attrs={'class': 'reference'})
@@ -517,33 +514,24 @@ class TagGenerate(Parsing):
                 'ref-url': ref.get('url'),
                 'ref-title': ref.get('text')
             }
-            table.push(self.generate_tag_by_template(self.template('quo'), mas_val))
+            table.push(self.generate_tag_by_template(self.template('quote'), mas_val))
         return table
 
 
 class Mushroom(Tag):
 
-    def __init__(self, content, meta, css_output=False, printing=True):
+    def __init__(self, meta):
         Tag.__init__(self, 'html', attrs={'lang': 'zh'})
-        self.content = content
         self.meta = meta
         self.head = Tag('head')
         self.body = Tag('body')
-        self.feed2head(Tag('meta', attrs={'charset': 'UTF-8'}))
-        self.feed2head(Tag('title', string=meta.title))
+        self.put2head(Tag('meta', attrs={'charset': 'UTF-8'}))
+        self.put2head(Tag('title', string=meta.title))
         self.push(self.head, self.body)
         self.title = None
         self.text = None
         self.new_article()
-        self.css_output = css_output
-        self.stylesheets = list()
-        self.image_list = list()
-
-        if printing:
-            self.feed2head(
-                Tag('link', attrs={'rel': 'stylesheet', 'type': 'text/css', 'href': 'print.css',
-                                   'media': 'print'})
-            )
+        self.style_meta = None
 
     @property
     def article(self):
@@ -553,28 +541,25 @@ class Mushroom(Tag):
             self.new_article()
             return self.article
 
-    def feed2head(self, tag: Tag):
+    def put2head(self, tag: Tag):
         self.head.push(tag)
 
-    def feed2body(self, tag: Tag):
+    def put2body(self, tag: Tag):
         self.body.push(tag)
 
-    def link_css_file(self):
-        """link stylesheet file in html link tag"""
-        for stylesheet in self.stylesheets:
-            self.feed2head(
-                Tag('link', attrs={'rel': 'stylesheet', 'type': 'text/css',
-                                   'href': stylesheet['file_name']}))
+    def link_css_file(self, file):
+        self.put2head(
+            Tag('link',
+                attrs={
+                    'rel': 'stylesheet', 'type': 'text/css', 'href': file}))
 
-    def insert_css_code(self):
-        """insert stylesheet code in html style tag"""
-        for stylesheet in self.stylesheets:
-            self.feed2head(
-                Tag('style', attrs={'type': 'text/css'}, string=stylesheet['format_code']))
+    def insert_css_code(self, code):
+        self.put2head(
+            Tag('style', attrs={'type': 'text/css'}, string=code))
 
     def output_css_code(self):
         """return stylesheets for output or other else"""
-        return self.stylesheets
+        return self.style_meta
 
     def insert_article_text(self, text):
         self.text = text
@@ -584,37 +569,32 @@ class Mushroom(Tag):
 
     def new_article(self):
         if self.title or self.text:
-            self.commit_article()
+            self._commit_article()
         if len(self.body.contents) >= 1:
-            self.feed2body(Tag('div', attrs={'class': 'divide'}))
-        self.feed2body(Tag('div', attrs={'class': 'article'}))
+            self.put2body(Tag('div', attrs={'class': 'divide'}))
+        self.put2body(Tag('div', attrs={'class': 'article'}))
 
-    def commit_article(self):
+    def _commit_article(self):
         self.article.push(self.title)
         self.article.push(self.text)
 
     def write_down(self, outfile, indent=0):
-        Formatter(self.content).formatter(self.meta, self)
-        self.commit_article()
-        if self.css_output:
-            self.link_css_file()
-        else:
-            self.insert_css_code()
+        self._commit_article()
         outfile.write('<!DOCTYPE html>\n')
         return super(Mushroom, self).write_down(outfile)
 
 
 class Formatter(TagGenerate):
 
-    def __init__(self, content):
+    def __init__(self, content, remove_media):
         TagGenerate.__init__(self)
         self.tag_list = self.parse_tag(content)
+        self.remove_media = remove_media
         self.reference_list = list()
         self.ref_ind = 1
         self.style_meta = set()
         self.style_meta.add('styleText')
         self.style_meta.add('styleMod')
-        self.image_list = list()
 
     def formatter(self, meta, otp: Mushroom):
         """处理Tags，修改属性、生成视频标签等"""
@@ -627,10 +607,7 @@ class Formatter(TagGenerate):
 
         otp.insert_article_title(self.article_tile(meta))
         otp.insert_article_text(self.article_text(*r))
-
-        for stylesheet in self.style_meta:
-            otp.stylesheets.append(config.get_setting('head/style/%s' % stylesheet))
-        otp.image_list = self.image_list
+        otp.style_meta = self.style_meta
 
         return otp
 
@@ -638,12 +615,17 @@ class Formatter(TagGenerate):
         """处理Tags"""
         contents_list = list()
         for tag in contents:
+            if tag.name == 'figure' and self.remove_media:
+                continue
+
             if tag.name in ('a', 'div', 'figure', 'img', 'sup'):
                 contents_list.append(getattr(self, tag.name)(tag))
                 continue
+
             tag.contents = self.format(tag.contents)
             self._remove_attrs(tag)
             contents_list.append(tag)
+
         return contents_list
 
     def figure(self, tag):
@@ -651,8 +633,6 @@ class Formatter(TagGenerate):
 
         img = tag.find('img')
         url = img.get_attrs('data-original') or img.get_attrs('src')
-
-        self.image_list.append(url)
 
         return Tag('figure', contents=[Tag('img', attrs={'src': url}), tag.find('figcaption')])
 
@@ -704,7 +684,7 @@ class Formatter(TagGenerate):
             return self.video_box(
                 video_link=tag.find('span', _class='url').string,
                 cover_link=tag.find('img').get_attrs('src'),
-                tip=tag.find('span', **{'class': 'title'}).string
+                tip=tag.find('span', **{'class': 'title'}).string.strip()
             )
         except AttributeError as e:
             print(tag)
@@ -715,7 +695,7 @@ class Formatter(TagGenerate):
         url = tag.get_attrs('href')
         img = tag.get_attrs('image')
         if re.search('zhihu', url) and img is None:
-            img = config.get_setting('Formatter/link_card_default_image')
+            img = data.default('link_card_default_image')
         return self.link_card(
             url=url,
             title=tag.string,

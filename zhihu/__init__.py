@@ -1,11 +1,25 @@
-__version__ = '6.0.1'
+__version__ = '1.0'
+__name__ = 'Zhihu Favorite'
 
 
-"""
-           西红柿炒蛋简明教程
-                     ——从入门到砸锅
+class Document:
+    def __init__(self, meta, content):
+        self.meta = meta
+        self.content = content
+        self.images = list()
 
-          母鸡-->生蛋-->炒鸡蛋--\
-                                +-->混合翻炒-->调味-->出锅
-西红柿-->清洗-->切片-->炒西红柿--/
-"""
+    def convert2(self, converter, file):
+        file.write(converter(self).tostring())
+
+
+class DocBuilder:
+    def __init__(self, doc: Document):
+        self.doc = doc
+
+
+class MarkdownBuilder(DocBuilder):
+    pass
+
+
+class HtmlBuilder(DocBuilder):
+    pass
