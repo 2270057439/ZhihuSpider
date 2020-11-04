@@ -44,7 +44,7 @@
 
 - 收藏答案(默认输出HTML，这里同时输出HTML和Markdown)，如果需要同时下载其中的插图，则添加`-dg`选项：
 ```powershell
-zhihu -u https://www.zhihu.com/question/296752647/answer/1092094945 -f all --dg
+zhihu -u https://www.zhihu.com/question/296752647/answer/1092094945 -f all -dg
 ```
 
 - 如果只需要收藏其中的插图而不需要收藏文案，则使用如下命令：
