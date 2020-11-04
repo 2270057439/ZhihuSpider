@@ -6,10 +6,11 @@ from zhihu.util import format_style_sheet
 
 
 class Meta:
-    __slots__ = ('title', 'voteup', 'author', 'content', 'author',
-                 'identity', 'background', 'source_url',
-                 'created_date', 'author_homepage', 'author_avatar_url'
-                 )
+    __slots__ = (
+        'title', 'voteup', 'author', 'content', 'author',
+        'identity', 'background', 'source_url',
+        'created_date', 'author_homepage', 'author_avatar_url'
+    )
 
     def __init__(
             self,
@@ -38,7 +39,9 @@ class Meta:
     def __str__(self):
         return '\n'.join(
             ['{}: {}'.format(k, v) for k, v in
-             sorted(list([(k, getattr(self, k)) for k in self.__slots__]), key=lambda x: len(x[0]))]
+             sorted(
+                 [(k, getattr(self, k)) for k in self.__slots__],
+                 key=lambda x: len(x[0]))]
         )
 
     def __setattr__(self, key, value):

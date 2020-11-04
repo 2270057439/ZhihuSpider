@@ -60,20 +60,29 @@ class VideoManagement(SingleManagement):
         )
 
     def download_video(self, meta, process_bar):
-        super(VideoManagement, self)._download_helper(
-            meta[0],
-            meta[1],
+        self._download_helper(
+            meta['video_url'],
+            meta['file_name'],
             process_bar=process_bar
         )
+        if meta['cover']:
+            self.download_images(meta['cover'], lambda x: x)
 
     def parse_data(self, data):
-        playlist = data.get('playlist')
-        data = playlist.get('SD', None) or playlist.get('LD', None)
-        video_url, ext = data.get('play_url'), data.get('format')
-        file_name = work_dir.generate_file_name((self.title, self.identity), ext)
+        meta = dict()
+        meta['cover'] = data.get('cover_url', None)
 
-        return (
-            video_url, file_name)
+        for video_resolution in ('playlist/FHD', 'playlist/HD', 'playlist/LD', 'playlist/SD'):
+            try:
+                video_msg = util.getvalue(data, video_resolution)
+
+                meta['format'] = video_msg.get('format')
+                meta['video_url'] = video_msg.get('play_url')
+                meta['file_name'] = work_dir.generate_file_name((self.title, self.identity), meta['format'])
+
+                return meta
+            except KeyError:
+                pass
 
 
 class QuestionManagement(MultipleManagement):

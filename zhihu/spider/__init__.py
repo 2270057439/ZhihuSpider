@@ -53,6 +53,7 @@ class LaunchTask:
             table.double_process_bar = config.get('download_image')
 
             for data in management:
+
                 meta = management.parse_data(data)
 
                 try:
@@ -74,4 +75,3 @@ class LaunchTask:
 
             table.close()
             return
-

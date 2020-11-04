@@ -1,4 +1,4 @@
-from zhihu.__main__ import main
+from zhihu.main import main
 import sys
 
 test_items = {

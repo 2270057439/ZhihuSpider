@@ -217,7 +217,7 @@ class DoubleProcessBar:
 
 
 class BeautifulTable:
-    __BASE_LEN = 11
+    __BASE_LEN = 13
     __MINI_BAR_LEN = 50
     MIN_LEN = __BASE_LEN + __MINI_BAR_LEN
 
@@ -259,7 +259,7 @@ class BeautifulTable:
 
         self.__line_len = max([
             str_length(management.title),
-            str_length(self.save_to), self.__BASE_LEN,
+            str_length(self.save_to) + self.__BASE_LEN,
             self.MIN_LEN
         ])
 

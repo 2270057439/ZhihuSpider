@@ -53,12 +53,11 @@ class WorkDir:
         """给file添加并返回完整的路径"""
         return opj(self._path, file)
 
-    def generate_file_name(self, members, extension, *, cover=True, root=None):
+    def generate_file_name(self, members, extension, *, cover=False):
         """返回由多个部分构成的文件名和路径
         :param extension:  文件扩展名
         :param members:    文件名的构成部分，一个以上，列表类型
         :param cover: 是否覆盖已存在的文件名
-        :param root:  文件路径，默认self.get_file_name()()()()()()()()()()()()
         :return:
         """
         main_name = escape_file_path('_'.join(members))

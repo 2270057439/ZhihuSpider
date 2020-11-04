@@ -1,5 +1,5 @@
 import sys
-from zhihu.__main__ import main
+from zhihu.main import main
 
 url = r'https://www.zhihu.com/question/296752647'
 

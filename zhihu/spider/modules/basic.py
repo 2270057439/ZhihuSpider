@@ -1,10 +1,13 @@
-import zhihu.spider.core as core
+import os
+import re
+
 import requests
+
+import zhihu.spider.core as core
+from zhihu import exception
+from zhihu import util
 from zhihu.auxiliary import config as global_config
 from zhihu.auxiliary import work_dir, log
-from zhihu import util
-from zhihu import exception
-import re
 from zhihu.document import Meta
 
 
@@ -47,29 +50,6 @@ def parse_answer(data):
     return meta
 
 
-def parse_answer_uppercase(data):
-    """
-    parse_ans与parse_ans_uppercase的区别在于由多个
-    单词构成的键前者使用下划线“_”区分，后者使用首字母大写区分
-    """
-    meta = Meta()
-
-    meta.identity = data.get('id')
-    meta.content = data.get('content')
-    meta.voteup = data.get('voteupCount')
-    meta.author = util.getvalue(data, 'author/name')
-    meta.title = util.getvalue(data, 'question/title')
-    meta.created_date = util.timestamp_to_date(data.get('createdTime'))
-
-    meta.author_homepage = core.ZhihuRequestsApi.get_with_identity(
-        'AuthorHomePageUrl', util.getvalue(data, 'author/urlToken'))
-
-    meta.source_url = core.ZhihuRequestsApi.get_with_identity('AnswerUrl', data.get('id'))
-    meta.author_avatar_url = util.getvalue(data, 'author/avatarUrlTemplate').format(size='l')
-
-    return meta
-
-
 class BasicManagement:
     NAME = 'Basic'
 
@@ -80,6 +60,8 @@ class BasicManagement:
         self.session = core.init_session()
         self.title = None
         self.totals = 1
+        self.image_count = 0
+        self.item_count = 0
 
     def __del__(self):
         self.session.close()
@@ -88,9 +70,11 @@ class BasicManagement:
         data_type = data.get('type')
 
         if data_type == 'answer':
+            self.item_count += 1
             return parse_answer(data)
 
         if data_type == 'article':
+            self.item_count += 1
             return parse_article(data)
 
     def fetch_json_data(self, target, identity, cached=False, **kwargs):
@@ -112,13 +96,15 @@ class BasicManagement:
         return resp.json()
 
     def download_images(self, content, process_bar):
+
         images_collection = self.search_images(content)
         for image_meta in images_collection:
             # image_meta：(image_link, image_file_name, image_name, resolution, format)
             self._download_helper(
                 image_meta[0],
-                work_dir.image_file(f'{self.name.title()}-{self.identity}-{image_meta[1]}')
+                work_dir.image_file(f'{self.name}-{self.identity}-{image_meta[1]}')
             )
+            self.image_count += 1
             process_bar(len(images_collection))
 
     def data_packages(self, offset=0):
@@ -148,21 +134,39 @@ class BasicManagement:
     def _download_helper(cls, url, file_name, process_bar=None):
         stream = bool(process_bar)
 
-        with core.init_session().get(url, stream=stream, timeout=10) as resp:
-            if resp.status_code != 200:
+        def download():
+            with core.init_session().get(url, stream=stream, timeout=10) as resp:
+                resp.close()
+                if resp.status_code != 200:
+                    return resp.status_code
+
+                if stream:
+                    totals = int(resp.headers['content-length'])  # Byte
+                    with open(file_name, "wb") as foo:
+                        for chunk in resp.iter_content(chunk_size=1024):
+                            foo.write(chunk)
+                            process_bar(totals, size=len(chunk))
+                else:
+                    with open(file_name, "wb") as foo:
+                        foo.write(resp.content)
+
                 return resp.status_code
 
-            if stream:
-                totals = int(resp.headers['content-length'])  # Byte
-                with open(file_name, "wb") as foo:
-                    for chunk in resp.iter_content(chunk_size=1024):
-                        foo.write(chunk)
-                        process_bar(totals, size=len(chunk))
-            else:
-                with open(file_name, "wb") as foo:
-                    foo.write(resp.content)
-
-            return resp.status_code
+        download_status_code = 0
+        try:
+            download_status_code = download()
+        except requests.exceptions.ReadTimeout:
+            for i in range(3):
+                try:
+                    download_status_code = download()
+                    if download_status_code == 200:
+                        break
+                except requests.exceptions.ReadTimeout:
+                    pass
+        finally:
+            if download_status_code != 200 and os.path.exists(file_name):
+                os.remove(file_name)
+            return download_status_code == 200
 
     @classmethod
     def search_images(cls, content):
@@ -179,9 +183,12 @@ class BasicManagement:
         if content is None:
             return list()
 
-        search_regular_expression = re.compile(
-            r'(https://pic\d.zhimg.com/(?:\d+/)?v\d-((\w+)_([brl]).(jpg|gif|webp|png|jpeg))(?:[?&=a-zA-z0-9]+)?)'
+        universal = (
+            r'(https://pic\d.zhimg.com/(?:\d+/)?v\d-(([a-z0-9]+)(?:_([a-z0-9]+))?\.([a-z]+))(?:[?&=a-zA-z0-9]+)?)'
         )
+        original = fr'data-original="{universal}"'
+
+        search_regular_expression = re.compile(original)
         image_search_result_list = search_regular_expression.findall(content)
 
         # 去重，挑选特定格式、分辨率高的图片
@@ -194,8 +201,8 @@ class BasicManagement:
             image_msg = image_search_result_list.pop()
             image_name = image_msg[2]
             if images_dict.get(image_name, None) is not None:
-                r_weight = resolution3.get(image_msg[3]) * format4.get(image_msg[4])
-                i_weight = resolution3.get(images_dict[image_name][3]) * format4.get(images_dict[image_name][4])
+                r_weight = resolution3.get(image_msg[3], 1) * format4.get(image_msg[4], 1)
+                i_weight = resolution3.get(images_dict[image_name][3], 1) * format4.get(images_dict[image_name][4], 1)
                 if r_weight > i_weight:
                     images_dict[image_name] = image_msg
             else:

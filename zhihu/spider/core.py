@@ -1,20 +1,8 @@
 from http import cookiejar
+
 import requests
+
 from zhihu.auxiliary import data, work_dir
-
-
-def init_session(load_cookies=False):
-    session = requests.Session()
-    session.headers.update({'User-Agent': ZhihuRequestsApi.UA})
-    if load_cookies:
-        try:
-            cookies = cookiejar.LWPCookieJar(filename=work_dir.cookies_file())
-            cookies.load()
-            session.cookies = cookies
-        except FileNotFoundError:
-            pass
-
-    return session
 
 
 class ZhihuRequestsApi:
@@ -28,8 +16,8 @@ class ZhihuRequestsApi:
     @classmethod
     def get_with_identity(cls, target, identity, /, **kwargs):
         """
-        :param identity: id of target
         :param target: name of api
+        :param identity: id of target
         :param kwargs: offset, limit, sort_by
         :return: str, url
         """
@@ -44,3 +32,16 @@ class ZhihuRequestsApi:
 
         return data.api(target).format(**params)
 
+
+def init_session(load_cookies=False):
+    session = requests.Session()
+    session.headers.update({'User-Agent': ZhihuRequestsApi.UA})
+    if load_cookies:
+        try:
+            cookies = cookiejar.LWPCookieJar(filename=work_dir.cookies_file())
+            cookies.load()
+            session.cookies = cookies
+        except FileNotFoundError:
+            pass
+
+    return session

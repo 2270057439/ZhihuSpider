@@ -33,7 +33,7 @@ def get_urls(args):
     urls = list()
 
     if args.u is not None:
-        urls.extend(re.split(r'[\s$]+', args.u))
+        urls.extend(args.u.split('#'))
 
     def read_file(file):
         if file is None:
@@ -108,7 +108,7 @@ def main():
         if management is None:
             print(
                 '不支持的链接或链接错误，请使用完整的链接。',
-                '目前支持“答案”、“问题高赞答案”、“文章”、“专栏”和“收藏夹”。',
+                '目前支持——答案、文章、问题、视频、专栏、收藏夹”。',
                 f'ERROR: {url}',
                 sep='\n',
                 end='\n\n'
@@ -121,8 +121,7 @@ def main():
         except KeyboardInterrupt:
             table.show_msg('正在退出...')
             table.close(show_path=False)
-        except Exception as e:
-            raise e
+        except Exception:
             table.show_msg('程序发生错误！')
             table.close(show_path=False)
         else:

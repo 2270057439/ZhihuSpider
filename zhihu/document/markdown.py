@@ -89,7 +89,7 @@ class Markdown:
             )
 
             if tag.name not in cls.warp:
-                inner = cls.format(tag.contents, reference_list, level + 1)
+                inner = cls.format(tag.contents, reference_list, remove_media, level + 1)
                 warp = warp.format(inner=inner)
             content.write(warp)
 
@@ -111,10 +111,6 @@ class Markdown:
         handle_function = getattr(cls, cls.functions.get(tag_name, 'unsupported'))
 
         return handle_function(**kwargs)
-
-    ###########################################
-    # -----------{handle_functions}---------- #
-    ###########################################
 
     @classmethod
     def string(cls, **kwargs):
@@ -263,12 +259,10 @@ class Markdown:
 
         return ''.join(content) + '\n\n'
 
-    # ----------------{inner}---------------- #
-
     @classmethod
     def font_style(cls, **kwargs):
-        if re.match('h\d', kwargs.get('tag').name):
-            return '%s {inner}\n\n' % ('#' * int(re.search('\d', kwargs.get('tag').name).group()))
+        if re.match(r'h\d', kwargs.get('tag').name):
+            return '%s {inner}\n\n' % ('#' * int(re.search(r'\d', kwargs.get('tag').name).group()))
         elif kwargs.get('tag').name in cls.emphasize:
             return ' **{inner}** '
         else:
